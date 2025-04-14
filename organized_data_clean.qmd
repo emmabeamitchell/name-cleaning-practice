@@ -1,0 +1,162 @@
+---
+title: "organized name cleaning"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+load libraries
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+```
+
+load in data
+```{r}
+historical <- read_csv(here("data", "historical_production_delivery.csv"))
+actual_shortage <- read_csv(here("data", "actual_water_shortage_level.csv"))
+fiveyr_shortage <- read_csv(here("data", "five_year_water_shortage_outlook.csv"))
+monthly_shortage <- read_csv(here("data", "monthly_water_shortage_outlook.csv"))
+```
+
+clean historical dataset
+```{r}
+historical_clean <- historical |> 
+  mutate(supplier_name = water_system_name) |> 
+  mutate(supplier_name = str_replace(water_system_name, "([a-zA-Z\\s]+)\\s+city\\+of", "city of \\1"),
+         supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
+    supplier_name = str_remove(supplier_name, regex("\\s*\\(\\s*ventura\\s*\\)", ignore_case = TRUE)),  
+    supplier_name = str_replace(water_system_name, "wd", "water department"),
+    supplier_name = str_replace(water_system_name, "water dept.", "water department"),
+   supplier_name = if_else(
+      str_to_lower(supplier_name) == "california water service co. - dixon",
+      "california water service company dixon",
+      supplier_name
+    ),
+    supplier_name = str_squish(supplier_name), 
+  supplier_name = str_to_title(supplier_name)) 
+```
+
+clean five year shortage dataset
+```{r}
+fiveyr_clean <- fiveyr_shortage %>%
+  mutate(
+    supplier_name = str_replace_all(supplier_name, "(?i)\\s+", " "),             # normalize all whitespace
+    supplier_name = str_trim(supplier_name),                                     # trim leading/trailing spaces
+    supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+city\\s+of", "city of \\1"),
+    supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
+    supplier_name = str_remove(supplier_name, regex("\\s*\\(\\s*ventura\\s*\\)", ignore_case = TRUE)),  # flexible (Ventura)
+    supplier_name = if_else(
+      str_to_lower(supplier_name) == "california water service company dixon, city of",
+      "california water service company dixon",
+      supplier_name
+    ),
+    supplier_name = str_squish(supplier_name),                                   # remove extra internal spacing
+    supplier_name = str_to_title(supplier_name)                                  # convert to title case
+  )
+```
+
+clean monthly shortage dataset
+```{r}
+
+monthly_clean <- monthly_shortage %>%
+  mutate(
+    supplier_name = str_replace_all(supplier_name, "(?i)\\s+", " "),
+    supplier_name = str_trim(supplier_name), # trim leading/trailing spaces
+    supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+city\\s+of", "city of \\1"),
+    supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
+     supplier_name = str_remove(supplier_name, "\\(ventura\\)"),
+    supplier_name = if_else(
+      str_to_lower(supplier_name) == "california water service company dixon, city of",
+      "california water service company dixon",
+      supplier_name
+    ),
+    supplier_name = str_squish(supplier_name),  
+    supplier_name = str_to_title(supplier_name)
+  )
+```
+
+clean actual shortage dataset
+```{r}
+actual_clean <- actual_shortage %>%
+  mutate(
+    supplier_name = str_replace_all(supplier_name, "(?i)\\s+", " "), # normalize all whitespace to single space
+    supplier_name = str_trim(supplier_name), # trim leading/trailing spaces
+    supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+city\\s+of", "city of \\1"),
+    supplier_name = str_replace(supplier_name, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
+    supplier_name = str_remove(supplier_name, "\\(ventura\\)"),
+    supplier_name = if_else(
+      str_to_lower(supplier_name) == "california water service company dixon, city of",
+      "california water service company dixon",
+      supplier_name
+    ),
+    supplier_name = str_squish(supplier_name),  
+    supplier_name = str_to_title(supplier_name)
+  )
+```
+
+```{r}
+clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") {
+  col_sym <- rlang::sym(col_name)
+  new_col_sym <- rlang::sym(new_col_name)
+
+  data %>%
+    mutate(
+      !!new_col_sym := !!col_sym,
+      !!new_col_sym := str_replace_all(!!new_col_sym, "(?i)\\s+", " "),
+      !!new_col_sym := str_trim(!!new_col_sym),
+      !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+city\\s+of", "city of \\1"),
+      !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+- city\\s+of", "city of \\1"),
+      !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
+      !!new_col_sym := str_replace(!!new_col_sym, "(\\b[a-z]+) city water dept\\.?$", "city of \\1 water department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "(\\b[a-z]+) water dept\\.?$", "city of \\1 water department"),
+      
+      !!new_col_sym := str_remove(!!new_col_sym, regex("\\(\\s*ventura\\s*\\)", ignore_case = TRUE)),
+      !!new_col_sym := case_when(
+  str_to_lower(!!new_col_sym) %in% c(
+    "california water service co. - dixon",
+    "california water service company dixon, city of"
+  ) ~ "california water service company dixon",
+  
+  str_to_lower(!!new_col_sym) %in% c(
+    "golden state wc",
+    "golden state wc.",
+    "golden state water co.",
+    "gswc"
+  ) ~ "golden state water company",
+  
+  TRUE ~ !!new_col_sym),
+
+      !!new_col_sym := str_squish(!!new_col_sym),
+      !!new_col_sym := str_to_title(!!new_col_sym)
+    )
+}
+```
+
+
+```{r}
+historical_clean <- clean_supplier_name(historical, "water_system_name")
+fiveyr_clean <- clean_supplier_name(fiveyr_shortage, "supplier_name")
+monthly_clean <- clean_supplier_name(monthly_shortage, "supplier_name")
+actual_clean <- clean_supplier_name(actual_shortage, "supplier_name")
+
+```
+
+```{r}
+
+supplier_table <- bind_rows(
+  historical_clean %>% select(org_id, supplier_name),
+  fiveyr_clean %>% select(org_id, supplier_name),
+  monthly_clean %>% select(org_id, supplier_name),
+  actual_clean %>% select(org_id, supplier_name)
+) %>%
+  distinct()  # remove any duplicate rows
+
+```
+
+
+
+
+
+
