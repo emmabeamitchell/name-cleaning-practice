@@ -100,38 +100,131 @@ actual_clean <- actual_shortage %>%
 clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") {
   col_sym <- rlang::sym(col_name)
   new_col_sym <- rlang::sym(new_col_name)
-
+  
   data %>%
     mutate(
       !!new_col_sym := !!col_sym,
+      # Clean whitespace and remove punctuation
+      !!new_col_sym := str_squish(!!new_col_sym),
       !!new_col_sym := str_replace_all(!!new_col_sym, "(?i)\\s+", " "),
       !!new_col_sym := str_trim(!!new_col_sym),
+      # Move "City of" to the front if it appears after second word (comma ok), and remove comma
+!!new_col_sym := case_when(
+  str_detect(!!new_col_sym, "(?i)^\\S+,?\\s+\\S+\\s+.*city of.*") ~ {
+    # Break into parts around "City of"
+    match <- str_match(!!new_col_sym, "(?i)(.*)\\bcity of\\b(.*)")
+    before <- str_remove_all(str_squish(match[,2]), ",")
+    after <- str_remove_all(str_squish(match[,3]), ",")
+    str_squish(paste("City Of", after, before))
+  },
+  TRUE ~ !!new_col_sym
+),
+
+      
+      # Specifically handle names ending with "city of"
+      !!new_col_sym := case_when(
+        str_detect(!!new_col_sym, "(?i)(.+)\\s+city\\s+of\\s*$") ~ {
+          prefix <- str_extract(!!new_col_sym, "(?i)(.+)(?=\\s+city\\s+of\\s*$)")
+          paste0("City Of ", prefix)
+        },
+        TRUE ~ !!new_col_sym
+      ),
+      
+      # Reformat other known patterns
       !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+city\\s+of", "city of \\1"),
       !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+- city\\s+of", "city of \\1"),
       !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
       !!new_col_sym := str_replace(!!new_col_sym, "(\\b[a-z]+) city water dept\\.?$", "city of \\1 water department"),
       !!new_col_sym := str_replace(!!new_col_sym, "(\\b[a-z]+) water dept\\.?$", "city of \\1 water department"),
-      
-      !!new_col_sym := str_remove(!!new_col_sym, regex("\\(\\s*ventura\\s*\\)", ignore_case = TRUE)),
-      !!new_col_sym := case_when(
-  str_to_lower(!!new_col_sym) %in% c(
-    "california water service co. - dixon",
-    "california water service company dixon, city of"
-  ) ~ "california water service company dixon",
-  
-  str_to_lower(!!new_col_sym) %in% c(
-    "golden state wc",
-    "golden state wc.",
-    "golden state water co.",
-    "gswc"
-  ) ~ "golden state water company",
-  
-  TRUE ~ !!new_col_sym),
+      !!new_col_sym := str_replace(!!new_col_sym, "dept.", "department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "dept", "department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "folsom, city of", "city of folsom"),
+      !!new_col_sym := str_remove(!!new_col_sym, ",\\s*$"),
+      !!new_col_sym := str_remove(!!new_col_sym, "-\\s*$"),
+      !!new_col_sym := str_replace(!!new_col_sym, "port hueneme city water dept", "city of port hueneme water department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "hawthorne-city of city water department", "city of hawthorne water department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "morrow bay pw department- ", "morrow bay public works department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "city of newman-water department", "city of newman water department"),
 
+      
+      # Fix Bell/Bell Gardens
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("bell, bell gardens|bell-bell gardens", ignore_case = TRUE),
+        "bell/bell gardens"
+      ),
+      
+      # Remove location tag (like "ventura")
+      !!new_col_sym := str_remove(!!new_col_sym, regex("\\(\\s*ventura\\s*\\)", ignore_case = TRUE)),
+      
+      # Standardize known full-name cases
+      !!new_col_sym := case_when(
+        str_to_lower(!!new_col_sym) %in% c(
+          "california water service co. - dixon",
+          "california water service company dixon, city of"
+        ) ~ "california water service company dixon",
+        TRUE ~ !!new_col_sym
+      ),
+      
+      !!new_col_sym := case_when(
+        str_to_lower(!!new_col_sym) %in% c(
+          "city of thousand oaks",
+          "thousand oaks water dept",
+          "	thousand oaks  city of",
+          "Thousand City Of Oaks Water Department",
+          "thousand city of oaks water department",
+          "thousand oaks city of"
+        ) ~ "city of thousand oaks water department",
+        TRUE ~ !!new_col_sym
+      ),
+
+      !!new_col_sym := case_when(
+        str_to_lower(!!new_col_sym) %in% c(
+          "port hueneme city water dept",
+          "Port City Of Hueneme Water Department",
+          "city of port hueneme water department",
+          "port city of hueneme water department"
+        ) ~ "city of port hueneme water department",
+        TRUE ~ !!new_col_sym
+      ),
+      
+       !!new_col_sym := case_when(
+        str_to_lower(!!new_col_sym) %in% c(
+          "city of chowchilla",
+          "chowcilla, city of",
+          "chowchilla, city of water department"
+        ) ~ "city of chowchilla water department",
+        TRUE ~ !!new_col_sym
+      ),
+      
+      # Replace golden state name variants
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("\\bgolden state wc\\b|\\bgswc\\b|\\bgolden state water co\\.?\\b", ignore_case = TRUE),
+        "golden state water company"
+      ),
+      
+      # Replace cal am variants
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("\\bcal/am\\b|\\bcal am\\b|\\bcal american water co\\.?\\b|\\bcal american wc\\b|\\bcal-am water company\\b", ignore_case = TRUE),
+        "cal am water company"
+      ),
+      
+      # Prevent double replacements of "water company"
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("water company\\s+water company", ignore_case = TRUE),
+        "water company"
+      ),
+      
+      # Final cleanup
       !!new_col_sym := str_squish(!!new_col_sym),
       !!new_col_sym := str_to_title(!!new_col_sym)
     )
 }
+
+
 ```
 
 
