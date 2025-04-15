@@ -100,7 +100,7 @@ actual_clean <- actual_shortage %>%
 clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") {
   col_sym <- rlang::sym(col_name)
   new_col_sym <- rlang::sym(new_col_name)
-  
+
   data %>%
     mutate(
       !!new_col_sym := !!col_sym,
@@ -108,20 +108,32 @@ clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") 
       !!new_col_sym := str_squish(!!new_col_sym),
       !!new_col_sym := str_replace_all(!!new_col_sym, "(?i)\\s+", " "),
       !!new_col_sym := str_trim(!!new_col_sym),
-      # Move "City of" to the front if it appears after second word (comma ok), and remove comma
-!!new_col_sym := case_when(
-  str_detect(!!new_col_sym, "(?i)^\\S+,?\\s+\\S+\\s+.*city of.*") ~ {
-    # Break into parts around "City of"
-    match <- str_match(!!new_col_sym, "(?i)(.*)\\bcity of\\b(.*)")
-    before <- str_remove_all(str_squish(match[,2]), ",")
-    after <- str_remove_all(str_squish(match[,3]), ",")
-    str_squish(paste("City Of", after, before))
-  },
-  TRUE ~ !!new_col_sym
-),
 
-      
-      # Specifically handle names ending with "city of"
+      # Add space after hyphen or slash if missing
+      !!new_col_sym := str_replace_all(!!new_col_sym, "([a-zA-Z])[-/]([a-zA-Z])", "\\1 - \\2"),
+
+      # Remove unmatched closing parentheses
+      !!new_col_sym := str_replace_all(!!new_col_sym, "\\)(?!.*\\()", ""),
+
+      # Fix utility + region (Cal Am / Golden State)
+      !!new_col_sym := str_replace(!!new_col_sym, "(?i)^(cal am water company|golden state water company)\\s+(\\S.*)$", "\\1 - \\2"),
+
+
+      # Fix "mutual water co." → "mutual water company"
+      !!new_col_sym := str_replace_all(!!new_col_sym, "(?i)mutual water co\\.?$", "mutual water company"),
+
+      # Move "City of" to the front if it appears after second word (comma ok), and remove comma
+      !!new_col_sym := case_when(
+        str_detect(!!new_col_sym, "(?i)^\\S+,?\\s+\\S+\\s+.*city of.*") ~ {
+          match <- str_match(!!new_col_sym, "(?i)(.*)\\bcity of\\b(.*)")
+          before <- str_remove_all(str_squish(match[,2]), ",")
+          after <- str_remove_all(str_squish(match[,3]), ",")
+          str_squish(paste("City Of", after, before))
+        },
+        TRUE ~ !!new_col_sym
+      ),
+
+      # Handle names ending in "city of"
       !!new_col_sym := case_when(
         str_detect(!!new_col_sym, "(?i)(.+)\\s+city\\s+of\\s*$") ~ {
           prefix <- str_extract(!!new_col_sym, "(?i)(.+)(?=\\s+city\\s+of\\s*$)")
@@ -129,35 +141,70 @@ clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") 
         },
         TRUE ~ !!new_col_sym
       ),
-      
+
       # Reformat other known patterns
       !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+city\\s+of", "city of \\1"),
       !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+- city\\s+of", "city of \\1"),
       !!new_col_sym := str_replace(!!new_col_sym, "(?i)([a-z\\s]+?)\\s+town\\s+of", "town of \\1"),
       !!new_col_sym := str_replace(!!new_col_sym, "(\\b[a-z]+) city water dept\\.?$", "city of \\1 water department"),
       !!new_col_sym := str_replace(!!new_col_sym, "(\\b[a-z]+) water dept\\.?$", "city of \\1 water department"),
-      !!new_col_sym := str_replace(!!new_col_sym, "dept.", "department"),
-      !!new_col_sym := str_replace(!!new_col_sym, "dept", "department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "dept\\.?\\b", "department"),
       !!new_col_sym := str_replace(!!new_col_sym, "folsom, city of", "city of folsom"),
       !!new_col_sym := str_remove(!!new_col_sym, ",\\s*$"),
       !!new_col_sym := str_remove(!!new_col_sym, "-\\s*$"),
+      !!new_col_sym := str_remove(!!new_col_sym, "[,\\.-]+\\s*$"),
+      !!new_col_sym := str_remove(!!new_col_sym, "(mwdoc)"),
       !!new_col_sym := str_replace(!!new_col_sym, "port hueneme city water dept", "city of port hueneme water department"),
       !!new_col_sym := str_replace(!!new_col_sym, "hawthorne-city of city water department", "city of hawthorne water department"),
       !!new_col_sym := str_replace(!!new_col_sym, "morrow bay pw department- ", "morrow bay public works department"),
       !!new_col_sym := str_replace(!!new_col_sym, "city of newman-water department", "city of newman water department"),
+      !!new_col_sym := str_replace(!!new_col_sym, "pud", "public utility district"),
+      !!new_col_sym := str_replace(!!new_col_sym, "wc", "water company"),
+      !!new_col_sym := str_replace(!!new_col_sym, "wd", "water district"),
+      !!new_col_sym := str_replace(!!new_col_sym, "w.d.", "water district"),
+      !!new_col_sym := str_replace(!!new_col_sym, "w.a.", "water agency"),
+      !!new_col_sym := str_replace(!!new_col_sym, "agencyd", "agency"),
+      !!new_col_sym := str_replace(!!new_col_sym, "company.", "company"),
+      !!new_col_sym := str_replace(!!new_col_sym, "pw", "public works"),
+      !!new_col_sym := str_replace(!!new_col_sym, "corp\\.?\\b", "corporation"),
+      !!new_col_sym := str_replace(!!new_col_sym, "tud", "tuolumne utilities district"),
+      !!new_col_sym := str_replace(!!new_col_sym, "mwc", "mutual water company"),
+      !!new_col_sym := str_replace(!!new_col_sym, "scwa", "sacramento county water agency"),
+      !!new_col_sym := str_replace(!!new_col_sym, "maintence", "maintenance"),
+      !!new_col_sym := str_replace(!!new_col_sym, " cwa", " county water agency"),
+      !!new_col_sym := str_replace(!!new_col_sym, "csd", "community services district"),
+      !!new_col_sym := str_replace(!!new_col_sym, "san dima", "- san dima"),
+      !!new_col_sym := str_replace(!!new_col_sym, "\\bsd\\b", "services district"),
 
-      
       # Fix Bell/Bell Gardens
       !!new_col_sym := str_replace_all(
         !!new_col_sym,
         regex("bell, bell gardens|bell-bell gardens", ignore_case = TRUE),
         "bell/bell gardens"
       ),
-      
-      # Remove location tag (like "ventura")
+
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("\\bCo\\.?\\b", ignore_case = TRUE),
+        "Company"
+      ),
+
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("\\bdiv\\.?\\b|\\bdivis(?:io)?n?\\b", ignore_case = TRUE),
+        "division"
+      ),
+
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("\\bdist\\.?\\b", ignore_case = TRUE),
+        "district"
+      ),
+
+      # Remove location tags like (ventura)
       !!new_col_sym := str_remove(!!new_col_sym, regex("\\(\\s*ventura\\s*\\)", ignore_case = TRUE)),
-      
-      # Standardize known full-name cases
+
+      # Special known names
       !!new_col_sym := case_when(
         str_to_lower(!!new_col_sym) %in% c(
           "california water service co. - dixon",
@@ -165,7 +212,15 @@ clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") 
         ) ~ "california water service company dixon",
         TRUE ~ !!new_col_sym
       ),
-      
+
+      !!new_col_sym := case_when(
+        str_to_lower(!!new_col_sym) %in% c(
+          "Great Oaks Water Companyin",
+          "great oaks wc inc"
+        ) ~ "great oaks water company inc",
+        TRUE ~ !!new_col_sym
+      ),
+
       !!new_col_sym := case_when(
         str_to_lower(!!new_col_sym) %in% c(
           "city of thousand oaks",
@@ -187,8 +242,8 @@ clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") 
         ) ~ "city of port hueneme water department",
         TRUE ~ !!new_col_sym
       ),
-      
-       !!new_col_sym := case_when(
+
+      !!new_col_sym := case_when(
         str_to_lower(!!new_col_sym) %in% c(
           "city of chowchilla",
           "chowcilla, city of",
@@ -196,31 +251,49 @@ clean_supplier_name <- function(data, col_name, new_col_name = "supplier_name") 
         ) ~ "city of chowchilla water department",
         TRUE ~ !!new_col_sym
       ),
-      
-      # Replace golden state name variants
+
       !!new_col_sym := str_replace_all(
         !!new_col_sym,
-        regex("\\bgolden state wc\\b|\\bgswc\\b|\\bgolden state water co\\.?\\b", ignore_case = TRUE),
+        regex("\\bgolden state wc\\b|\\bgswc\\b|\\bgolden state water co\\.?\\b|\\bgswater company\\b", ignore_case = TRUE),
         "golden state water company"
       ),
-      
-      # Replace cal am variants
+
       !!new_col_sym := str_replace_all(
         !!new_col_sym,
         regex("\\bcal/am\\b|\\bcal am\\b|\\bcal american water co\\.?\\b|\\bcal american wc\\b|\\bcal-am water company\\b", ignore_case = TRUE),
         "cal am water company"
       ),
-      
-      # Prevent double replacements of "water company"
+
+      !!new_col_sym := case_when(
+        str_detect(!!new_col_sym, "(?i)^(.+)-\\s*city,?\\s*water department\\s*$") ~ {
+          match <- str_match(!!new_col_sym, "(?i)^(.+?)-\\s*city,?\\s*water department\\s*$")
+          supplier <- str_to_title(str_squish(match[,2]))
+          paste("City Of", supplier, "Water Department")
+        },
+        TRUE ~ !!new_col_sym
+      ),
+
+      # Replace only isolated "id" with "irrigation district"
+      !!new_col_sym := str_replace_all(
+        !!new_col_sym,
+        regex("^id$", ignore_case = TRUE),
+        "irrigation district"
+      ),
+
+      # Prevent double replacements
       !!new_col_sym := str_replace_all(
         !!new_col_sym,
         regex("water company\\s+water company", ignore_case = TRUE),
         "water company"
       ),
-      
+
       # Final cleanup
       !!new_col_sym := str_squish(!!new_col_sym),
-      !!new_col_sym := str_to_title(!!new_col_sym)
+      !!new_col_sym := str_to_title(!!new_col_sym),
+      
+       # Preserve KOA acronym
+      !!new_col_sym := str_replace_all(!!new_col_sym, "\\bKoa\\b", "KOA")
+
     )
 }
 
@@ -248,7 +321,19 @@ supplier_table <- bind_rows(
 
 ```
 
+```{r}
+write.csv(supplier_table,"supplier_table.csv", row.names = FALSE)
+```
 
+```{r}
+# Create a single column with name and org_id combined
+supplier_export <- supplier_table %>%
+  mutate(name_with_id = paste(supplier_name, "-", org_id)) %>%
+  select(name_with_id)
+
+# Write to CSV
+write_csv(supplier_export, "supplier_names_with_org_ids.csv")
+```
 
 
 
